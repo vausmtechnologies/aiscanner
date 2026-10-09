@@ -1,0 +1,5 @@
+registration certificate
+vehicle number mh12ab1234
+engine number eng998877
+chassis number chss554433
+owner details

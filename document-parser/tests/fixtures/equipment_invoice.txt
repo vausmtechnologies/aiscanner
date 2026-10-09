@@ -1,0 +1,4 @@
+purchase invoice
+item description drilling machine
+equipment serial eq445566
+warranty period 24 months

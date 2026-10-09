@@ -1,0 +1,352 @@
+# AI Document Parser – Agent Build Instructions
+
+You are a senior AI engineer building a production-ready **Document Parsing and Classification Service**.
+
+This module is the **first component** of a larger AI Document Scanner system for compliance software.
+
+IMPORTANT:
+You are ONLY building the **Parser Service** in this phase.
+Do NOT build UI or Laravel code yet.
+
+The service must be modular so it can later be integrated into a Laravel backend.
+
+---
+
+# Objective
+
+Build a Python microservice that:
+
+1. Accepts a document file
+2. Extracts readable text using OCR
+3. Cleans and normalizes extracted text
+4. Runs document classification
+5. Returns classification result and metadata
+
+---
+
+# Supported File Types
+
+The parser must support:
+
+* PDF
+* JPG
+* PNG
+* TIFF
+
+Optional future support:
+
+* DOC
+* DOCX
+
+---
+
+# Required Output
+
+The parser must return structured JSON.
+
+Example response:
+
+{
+"success": true,
+"document_type": "Vehicles",
+"confidence": 0.91,
+"keywords_detected": [
+"registration certificate",
+"vehicle number"
+],
+"text_length": 420,
+"processing_time_ms": 180
+}
+
+---
+
+# System Architecture
+
+Parser Service
+
+Upload File
+↓
+OCR Engine
+↓
+Text Cleaner
+↓
+Keyword Classifier
+↓
+Similarity Classifier
+↓
+Return JSON
+
+The system must run locally using Python.
+
+---
+
+# Folder Structure
+
+Create the project using this structure:
+
+document-parser/
+
+app/
+main.py
+config.py
+
+parser/
+file_loader.py
+ocr_engine.py
+text_cleaner.py
+
+classification/
+keyword_classifier.py
+similarity_classifier.py
+
+models/
+embeddings.py
+
+utils/
+file_utils.py
+timer.py
+
+data/
+category_keywords.json
+training_samples.json
+
+tests/
+
+requirements.txt
+
+---
+
+# Technology Stack
+
+Use the following technologies:
+
+Python 3.11
+
+OCR:
+pytesseract
+pdf2image
+Pillow
+
+Embeddings:
+sentence-transformers
+
+API framework:
+FastAPI
+
+Similarity:
+scikit-learn cosine similarity
+
+---
+
+# Step 1 – File Loader
+
+Implement logic to detect file type and load it.
+
+PDF:
+convert pages to images
+
+Images:
+direct OCR processing
+
+---
+
+# Step 2 – OCR Engine
+
+Extract text from each page using pytesseract.
+
+Combine multi-page text into one string.
+
+Return extracted text.
+
+---
+
+# Step 3 – Text Cleaning
+
+Normalize text:
+
+convert to lowercase
+remove special characters
+remove duplicate whitespace
+
+Return cleaned text.
+
+---
+
+# Step 4 – Keyword Classification
+
+Load keywords from:
+
+data/category_keywords.json
+
+Example:
+
+{
+"Vehicles": [
+"registration certificate",
+"vehicle number",
+"engine number",
+"chassis number"
+],
+"Company": [
+"certificate of incorporation",
+"gst registration",
+"business license"
+],
+"Equipments": [
+"purchase invoice",
+"equipment serial",
+"warranty"
+],
+"People": [
+"employee",
+"passport",
+"aadhaar",
+"offer letter"
+]
+}
+
+Check if keywords appear in OCR text.
+
+Return best match with confidence score.
+
+---
+
+# Step 5 – Similarity Classification
+
+If keyword classification fails:
+
+Use embeddings to compare document text with sample documents.
+
+Load sample texts from:
+
+data/training_samples.json
+
+Compute cosine similarity.
+
+Return best category if similarity > 0.8.
+
+---
+
+# Step 6 – Final Response
+
+Return:
+
+document_type
+confidence
+keywords detected
+text length
+processing time
+
+---
+
+# Step 7 – API Endpoint
+
+Expose a REST API.
+
+POST /parse-document
+
+Input:
+
+multipart/form-data
+
+file: uploaded document
+
+Response:
+
+classification JSON.
+
+---
+
+# Step 8 – Performance Requirements
+
+Target performance:
+
+single document processing < 1 second.
+
+System must support batch processing later.
+
+---
+
+# Step 9 – Error Handling
+
+Handle errors for:
+
+unsupported file types
+OCR failure
+empty text extraction
+corrupt files
+
+Return structured error responses.
+
+---
+
+# Step 10 – Testing
+
+Create test files for:
+
+Vehicle RC
+Employee ID
+Equipment Invoice
+Company Certificate
+
+Ensure classification accuracy >80%.
+
+---
+
+# Integration Requirements (Future Laravel)
+
+The parser must be callable from Laravel via HTTP.
+
+Example request:
+
+POST /parse-document
+
+Laravel will upload the file.
+
+Parser returns classification JSON.
+
+Laravel will then:
+
+store file
+save classification in database
+
+---
+
+# Important Engineering Guidelines
+
+Write modular code.
+
+Each component must be independently testable.
+
+Avoid hardcoded values.
+
+Use config files where possible.
+
+Include clear logging for debugging.
+
+---
+
+# Expected Deliverable
+
+A fully working Python project that:
+
+runs with:
+
+uvicorn app.main:app --reload
+
+and exposes:
+
+http://localhost:8000/parse-document
+
+---
+
+# Future Extensions
+
+This parser will later support:
+
+LLM classification fallback
+document entity extraction
+expiry date detection
+compliance metadata extraction
+
+Design the system so these features can be added easily.

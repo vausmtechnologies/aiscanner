@@ -1,0 +1,168 @@
+"""FastAPI entry point for the document parser service."""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from parser.enterprise_loader import load_document_text
+from parser.file_loader import DocumentLoadingError
+from parser.ocr_engine import OCRProcessingError
+from parser.text_cleaner import clean_text
+from parser.service import DocumentParserService
+from utils.file_utils import FileValidationError, UnsupportedFileTypeError
+
+class ExpiryResponse(BaseModel):
+	"""Expiry sub-object embedded in the parse response."""
+
+	start_date: str | None = None
+	expiry_date: str | None = None
+	days_remaining: int | None = None
+	status: str = "unknown"  # "valid" | "expiring_soon" | "expired" | "unknown"
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="AI Document Parser Service", version="1.0.0")
+
+parser_service = DocumentParserService()
+
+
+class ParseSuccessResponse(BaseModel):
+	"""Response schema for successful document parsing."""
+
+	success: bool = True
+	document_type: str | None
+	confidence: float = Field(ge=0.0, le=1.0)
+	keywords_detected: list[str]
+	text_length: int
+	processing_time_ms: int
+	method: str = "none"  # "keyword" | "embedding" | "filename" | "none"
+	country: str | None = None  # "India" | "UK" | "US" | "EU" | None
+	metadata: dict[str, str | None] = Field(default_factory=dict)
+	expiry: ExpiryResponse = Field(default_factory=ExpiryResponse)
+
+
+class ParseErrorResponse(BaseModel):
+	"""Response schema for parser failures."""
+
+	success: bool = False
+	error_code: str
+	message: str
+
+
+class KeywordCategoryScore(BaseModel):
+	"""Category-level keyword matching details for diagnostics."""
+
+	category: str
+	confidence: float = Field(ge=0.0, le=1.0)
+	matched_count: int
+	total_keywords: int
+	keywords_detected: list[str]
+
+
+class DebugKeywordsResponse(BaseModel):
+	"""Response schema for debug keywords endpoint."""
+
+	success: bool = True
+	text_length: int
+	top_category: str | None
+	top_confidence: float = Field(ge=0.0, le=1.0)
+	category_scores: list[KeywordCategoryScore]
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+	"""Basic health endpoint for integration checks."""
+	return {"status": "ok"}
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+	"""Root endpoint with basic API usage details."""
+	return {
+		"service": "AI Document Parser Service",
+		"status": "running",
+		"health": "/health",
+		"parse_endpoint": "/parse-document",
+		"debug_keywords_endpoint": "/debug-keywords",
+		"docs": "/docs",
+	}
+
+
+@app.post("/parse-document", response_model=ParseSuccessResponse)
+async def parse_document(file: UploadFile = File(...)) -> ParseSuccessResponse | JSONResponse:
+	"""Parse an uploaded document and return classification metadata."""
+	try:
+		file_bytes = await file.read()
+		result = parser_service.parse_document(file_bytes=file_bytes, file_name=file.filename or "")
+
+		return ParseSuccessResponse(
+			success=True,
+			document_type=result.document_type,
+			confidence=result.confidence,
+			keywords_detected=result.keywords_detected,
+			text_length=result.text_length,
+			processing_time_ms=result.processing_time_ms,
+			method=result.method,
+			country=result.country,
+			metadata=result.metadata,
+			expiry=ExpiryResponse(
+				start_date=result.expiry.start_date,
+				expiry_date=result.expiry.expiry_date,
+				days_remaining=result.expiry.days_remaining,
+				status=result.expiry.status,
+			),
+		)
+
+	except UnsupportedFileTypeError as exc:
+		return _error_response("unsupported_file_type", str(exc), 400)
+	except FileValidationError as exc:
+		return _error_response("invalid_file", str(exc), 400)
+	except DocumentLoadingError as exc:
+		return _error_response("corrupt_or_unreadable_file", str(exc), 422)
+	except OCRProcessingError as exc:
+		return _error_response("ocr_failure", str(exc), 422)
+	except Exception as exc:  # pragma: no cover - top-level API safety net
+		logger.exception("Unexpected parse pipeline failure")
+		return _error_response("internal_error", str(exc), 500)
+
+
+@app.post("/debug-keywords", response_model=DebugKeywordsResponse)
+async def debug_keywords(file: UploadFile = File(...)) -> DebugKeywordsResponse | JSONResponse:
+	"""Inspect category keyword matches for a given uploaded document."""
+	try:
+		file_bytes = await file.read()
+		extracted_text, _ = load_document_text(file_bytes=file_bytes, file_name=file.filename or "")
+		cleaned_text = clean_text(extracted_text)
+
+		category_scores = parser_service.hybrid_classifier.keyword_classifier.score_categories(cleaned_text)
+		top_category = str(category_scores[0]["category"]) if category_scores else None
+		top_confidence = float(category_scores[0]["confidence"]) if category_scores else 0.0
+
+		return DebugKeywordsResponse(
+			success=True,
+			text_length=len(cleaned_text),
+			top_category=top_category,
+			top_confidence=top_confidence,
+			category_scores=[KeywordCategoryScore(**item) for item in category_scores],
+		)
+
+	except UnsupportedFileTypeError as exc:
+		return _error_response("unsupported_file_type", str(exc), 400)
+	except FileValidationError as exc:
+		return _error_response("invalid_file", str(exc), 400)
+	except DocumentLoadingError as exc:
+		return _error_response("corrupt_or_unreadable_file", str(exc), 422)
+	except OCRProcessingError as exc:
+		return _error_response("ocr_failure", str(exc), 422)
+	except Exception as exc:  # pragma: no cover - top-level API safety net
+		logger.exception("Unexpected debug keyword failure")
+		return _error_response("internal_error", str(exc), 500)
+
+
+def _error_response(error_code: str, message: str, status_code: int) -> JSONResponse:
+	"""Create standardized JSON errors for parser API responses."""
+	payload = ParseErrorResponse(error_code=error_code, message=message)
+	return JSONResponse(status_code=status_code, content=payload.model_dump())

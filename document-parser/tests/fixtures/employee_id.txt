@@ -1,0 +1,4 @@
+employee identity card
+employee id emp0019
+passport number p1234567
+aadhaar verified
