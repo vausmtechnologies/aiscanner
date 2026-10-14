@@ -1,0 +1,21 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Laravel / Node
+vendor/
+node_modules/
+
+# Env and OS
+.env
+.DS_Store
+
+# Extra / duplicate files
+aiscanner/
+backend/work_log_*.txt
+frontend/AGENTS.md
+frontend/CLAUDE.md
+.claude/
