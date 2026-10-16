@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.job_queue import enqueue_parse, fetch_job
 from parser.enterprise_loader import load_document_text
 from parser.file_loader import DocumentLoadingError
 from parser.ocr_engine import OCRProcessingError
@@ -86,6 +87,7 @@ def root() -> dict[str, str]:
 		"status": "running",
 		"health": "/health",
 		"parse_endpoint": "/parse-document",
+		"jobs_endpoint": "/jobs",
 		"debug_keywords_endpoint": "/debug-keywords",
 		"docs": "/docs",
 	}
@@ -127,6 +129,31 @@ async def parse_document(file: UploadFile = File(...)) -> ParseSuccessResponse |
 	except Exception as exc:  # pragma: no cover - top-level API safety net
 		logger.exception("Unexpected parse pipeline failure")
 		return _error_response("internal_error", str(exc), 500)
+
+
+@app.post("/jobs", status_code=202)
+async def create_job(file: UploadFile = File(...)) -> JSONResponse:
+	"""Queue a document for background parsing and return its job id."""
+	try:
+		job_id = enqueue_parse(await file.read(), file.filename or "")
+	except Exception as exc:
+		logger.exception("Could not enqueue job")
+		return _error_response("queue_unavailable", f"Job queue is not available: {exc}", 503)
+	return JSONResponse(status_code=202, content={"job_id": job_id, "status": "queued"})
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str) -> JSONResponse:
+	"""Return job status: queued | started | finished | failed (+ result when finished)."""
+	job = fetch_job(job_id)
+	if job is None:
+		return _error_response("job_not_found", "Job not found or expired.", 404)
+	status = job.get_status()
+	if status == "finished":
+		return JSONResponse(content={"job_id": job_id, "status": "finished", "result": job.result})
+	if status == "failed":
+		return JSONResponse(content={"job_id": job_id, "status": "failed", "message": "Worker failed or timed out."})
+	return JSONResponse(content={"job_id": job_id, "status": "started" if status == "started" else "queued"})
 
 
 @app.post("/debug-keywords", response_model=DebugKeywordsResponse)
