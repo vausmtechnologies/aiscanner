@@ -43,3 +43,11 @@ def test_parse_document_returns_structured_response(monkeypatch) -> None:
     assert payload["expiry"]["status"] == "valid"
     assert payload["expiry"]["expiry_date"] == "2027-04-01"
     assert payload["expiry"]["start_date"] == "2026-04-01"
+
+
+def test_cors_allows_any_origin_by_default() -> None:
+    from starlette.middleware.cors import CORSMiddleware
+
+    cors = next(m for m in api_main.app.user_middleware if m.cls is CORSMiddleware)
+
+    assert cors.kwargs["allow_origins"] == ["*"]

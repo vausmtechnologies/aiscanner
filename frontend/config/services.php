@@ -35,8 +35,13 @@ return [
         ],
     ],
 
+    'api' => [
+        'key' => env('API_KEY'),
+    ],
+
     'parser' => [
         'url' => env('PARSER_URL'),
+        'key' => env('PARSER_API_KEY'),
     ],
 
 ];

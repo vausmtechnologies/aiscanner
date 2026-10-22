@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
+import os
+from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -25,7 +29,45 @@ class ExpiryResponse(BaseModel):
 	status: str = "unknown"  # "valid" | "expiring_soon" | "expired" | "unknown"
 logger = logging.getLogger(__name__)
 
+
+def _load_env_file(path: Path) -> None:
+	"""Load KEY=VALUE lines from backend/.env without overriding real environment variables."""
+	if not path.is_file():
+		return
+	for line in path.read_text().splitlines():
+		line = line.strip()
+		if line and not line.startswith("#") and "=" in line:
+			key, _, value = line.partition("=")
+			os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+_load_env_file(Path(__file__).resolve().parent.parent / ".env")
+
+_OPEN_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
+
 app = FastAPI(title="AI Document Parser Service", version="1.0.0")
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+	"""Reject every call that lacks the PARSER_API_KEY, so nobody can parse documents without it."""
+	if request.method == "OPTIONS" or request.url.path in _OPEN_PATHS:
+		return await call_next(request)
+
+	expected = os.getenv("PARSER_API_KEY", "")
+	if not expected:
+		return JSONResponse(status_code=503, content={"message": "PARSER_API_KEY is not configured on the server."})
+	if not hmac.compare_digest(request.headers.get("x-api-key", ""), expected):
+		return JSONResponse(status_code=401, content={"message": "Invalid or missing API key."})
+	return await call_next(request)
+
+
+# Let any browser frontend call the API; set CORS_ALLOWED_ORIGINS="https://a.com,https://b.com" to restrict it.
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=[o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()],
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
 
 parser_service = DocumentParserService()
 
