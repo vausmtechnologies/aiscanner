@@ -22,7 +22,10 @@ class ScanController extends Controller
     public function scan(Request $request): RedirectResponse
     {
         $request->validate([
-            'file' => 'required|file|max:51200', // KB
+            'file' => 'required|file',
+        ], [
+            'file.required' => 'Please choose a file to scan.',
+            'file.uploaded' => 'Upload failed. The file is larger than the server allows (max 50 MB for a zip, 20 MB for a single file).',
         ]);
 
         try {

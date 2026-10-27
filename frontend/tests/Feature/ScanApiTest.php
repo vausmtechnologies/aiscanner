@@ -134,4 +134,15 @@ class ScanApiTest extends TestCase
 
         Http::assertSent(fn ($request) => $request->hasHeader('X-API-Key', 'parser-secret'));
     }
+
+    public function test_oversized_zip_is_rejected_with_its_size_before_any_parsing(): void
+    {
+        Http::fake();
+
+        $this->postJson('/api/scan', ['file' => UploadedFile::fake()->create('docs.zip', 51 * 1024)])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Zip file is too large: 51.0 MB. Maximum allowed is 50 MB, please upload a smaller file.');
+
+        Http::assertNothingSent();
+    }
 }

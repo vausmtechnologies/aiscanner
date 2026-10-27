@@ -225,3 +225,17 @@ def test_extraction_under_20ms(fn, text, label) -> None:
     fn(text)
     elapsed_ms = (time.perf_counter() - start) * 1000
     assert elapsed_ms < 20, f"{label} extractor took {elapsed_ms:.1f} ms (limit 20 ms)"
+
+
+def test_vehicle_us_labels_vin_plate_owner_and_long_date() -> None:
+    text = (
+        "Vehicle Owner: Northstar Office Supplies LLC\n"
+        "License Plate: CO TEST42 (sample)\n"
+        "VIN (sample) 1HGCM82633A004352\n"
+        "Registration Date: March 20, 2024\n"
+    )
+    result = extract_vehicle_metadata(text)
+    assert result["vehicle_number"] == "CO TEST42"
+    assert result["chassis_number"] == "1HGCM82633A004352"
+    assert result["owner_name"] == "Northstar Office Supplies LLC"
+    assert result["registration_date"] == "March 20, 2024"

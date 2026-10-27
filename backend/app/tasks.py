@@ -50,6 +50,7 @@ def parse_job(file_bytes: bytes, file_name: str) -> dict:
 		"country": result.country,
 		"metadata": result.metadata,
 		"expiry": asdict(result.expiry),
+		"categories": result.categories,
 	}
 
 

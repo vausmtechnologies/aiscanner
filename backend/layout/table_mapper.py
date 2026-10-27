@@ -34,6 +34,15 @@ _VEHICLE_MAPPING: dict[str, str] = {
     "chassis no":             "chassis_number",
     "chassis number":         "chassis_number",
     "vehicle identification": "chassis_number",
+    "model year":             "model_year",
+    "vehicle make / model":   "vehicle_model",
+    "vehicle make":           "vehicle_make",
+    "vehicle type":           "vehicle_type",
+    "license plate":          "vehicle_number",
+    "licence plate":          "vehicle_number",
+    "vin":                    "chassis_number",
+    "vehicle owner":          "owner_name",
+    "state of registration":  "registration_state",
     "model":                  "vehicle_model",
     "make":                   "vehicle_make",
     "manufacturer":           "vehicle_make",
@@ -69,6 +78,9 @@ _COMPANY_MAPPING: dict[str, str] = {
     "permanent account":      "pan_number",
     "registration number":    "registration_number",
     "date of registration":   "registration_date",
+    "ein":                    "ein",
+    "entity type":            "entity_type",
+    "business address":       "business_address",
     "address":                "registered_address",
     "principal place":        "registered_address",
 }
@@ -76,6 +88,8 @@ _COMPANY_MAPPING: dict[str, str] = {
 _EQUIPMENT_MAPPING: dict[str, str] = {
     "invoice no":             "invoice_number",
     "invoice number":         "invoice_number",
+    "invoice date":           "invoice_date",
+    "total due":              "total_amount",
     "serial no":              "serial_number",
     "serial number":          "serial_number",
     "model no":               "model_number",
@@ -167,6 +181,9 @@ def _lookup(raw_key: str, mapping: dict[str, str]) -> str | None:
     # Exact match first
     if raw_key in mapping:
         return mapping[raw_key]
+    # "model year" is not a model, even though it starts with "model"
+    if raw_key.startswith("model year"):
+        return None
     # Prefix match — handles trailing punctuation like "registration no."
     for map_key, canonical in mapping.items():
         if raw_key.startswith(map_key) or map_key.startswith(raw_key):

@@ -72,6 +72,15 @@ app.add_middleware(
 parser_service = DocumentParserService()
 
 
+class CategorySection(BaseModel):
+	"""One category found in a document, with the details extracted for it."""
+
+	category: str
+	confidence: float = Field(ge=0.0, le=1.0)
+	keywords_detected: list[str] = Field(default_factory=list)
+	metadata: dict[str, str | None] = Field(default_factory=dict)
+
+
 class ParseSuccessResponse(BaseModel):
 	"""Response schema for successful document parsing."""
 
@@ -85,6 +94,7 @@ class ParseSuccessResponse(BaseModel):
 	country: str | None = None  # "India" | "UK" | "US" | "EU" | None
 	metadata: dict[str, str | None] = Field(default_factory=dict)
 	expiry: ExpiryResponse = Field(default_factory=ExpiryResponse)
+	categories: list[CategorySection] = Field(default_factory=list)  # every category found, main one first
 
 
 class ParseErrorResponse(BaseModel):
@@ -158,6 +168,7 @@ async def parse_document(file: UploadFile = File(...)) -> ParseSuccessResponse |
 				days_remaining=result.expiry.days_remaining,
 				status=result.expiry.status,
 			),
+			categories=[CategorySection(**section) for section in result.categories],
 		)
 
 	except UnsupportedFileTypeError as exc:

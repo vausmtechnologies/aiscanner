@@ -16,6 +16,8 @@ class ScanService
 
     private const MAX_ZIP_FILES = 30;
 
+    private const MAX_ZIP_BYTES = 52428800; // 50 MB for a whole zip
+
     private const MAX_ENTRY_BYTES = 10485760; // 10 MB per document inside a zip
 
     private const MAX_FILE_BYTES = 20971520; // 20 MB for a single document
@@ -30,11 +32,15 @@ class ScanService
     public function start(UploadedFile $file): string
     {
         if (strtolower($file->getClientOriginalExtension()) === 'zip') {
+            if ($file->getSize() > self::MAX_ZIP_BYTES) {
+                throw new ScanException($this->tooLargeMessage('Zip file', $file->getSize(), self::MAX_ZIP_BYTES));
+            }
+
             return $this->startZip($file);
         }
 
         if ($file->getSize() > self::MAX_FILE_BYTES) {
-            throw new ScanException('File is too large (max 20 MB).');
+            throw new ScanException($this->tooLargeMessage('File', $file->getSize(), self::MAX_FILE_BYTES));
         }
 
         $name = $file->getClientOriginalName();
@@ -106,6 +112,16 @@ class ScanService
         Cache::forget($this->key($batch));
 
         return ['zip' => $meta['zip'], 'filename' => $meta['filename'], 'skipped' => $meta['skipped'], 'items' => $items];
+    }
+
+    private function tooLargeMessage(string $label, int $bytes, int $limit): string
+    {
+        return sprintf(
+            '%s is too large: %.1f MB. Maximum allowed is %d MB, please upload a smaller file.',
+            $label,
+            $bytes / 1048576,
+            $limit / 1048576,
+        );
     }
 
     private function startBatch(array $meta): string

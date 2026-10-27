@@ -22,10 +22,15 @@ _PAN          = re.compile(r'\b([A-Z]{5}\d{4}[A-Z])\b')
 
 # Company / trade name — the line that follows "legal name" or "trade name" labels
 _COMPANY_NAME = re.compile(
-    r'(?:legal\s*name|trade\s*name|name\s*of\s*(?:the\s*)?(?:company|business|firm))[:\s]+'
-    r'([A-Za-z0-9\s&.,\'\-]{3,80})',
+    r'(?:legal\s*name|trade\s*name|company\s*name|name\s*of\s*(?:the\s*)?(?:company|business|firm))[:\s]+'
+    r'([A-Za-z0-9 &.,\'\-]{3,80})',
     re.IGNORECASE,
 )
+
+# US Employer Identification Number: 12-3456789 (the label may carry a note, e.g. "EIN (sample)")
+_EIN          = re.compile(r'\bEIN\b(?:\s*\([^)\n]*\)|\s+(?:fictional\s+)?test\s+value)?[:\s]*(\d{2}-\d{7})\b', re.IGNORECASE)
+_ENTITY_TYPE  = re.compile(r'entity\s*type[:\s]+([A-Za-z][A-Za-z ().,\-]{2,60}?)(?=\s*(?:\n|ein\b|business\b|$))', re.IGNORECASE)
+_BUSINESS_ADDRESS = re.compile(r'business\s*address[:\s]+([A-Za-z0-9 ,.#\-]{5,120})', re.IGNORECASE)
 
 
 def extract_company_metadata(text: str) -> dict[str, str | None]:
@@ -45,6 +50,10 @@ def extract_company_metadata(text: str) -> dict[str, str | None]:
         "cin":          _clean(m_cin),
         "pan_number":   _clean(m_pan),
     }
+    for field, pattern in (("ein", _EIN), ("entity_type", _ENTITY_TYPE), ("business_address", _BUSINESS_ADDRESS)):
+        value = _clean(pattern.search(text), group=1)
+        if value:
+            result[field] = value
     logger.debug("Company metadata extracted: %s", result)
     return result
 

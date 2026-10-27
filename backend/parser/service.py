@@ -14,7 +14,7 @@ from layout.table_mapper import map_fields
 from layout.table_parser import merge_tables, parse_table_rows
 from metadata.metadata_router import extract_metadata
 from parser.enterprise_loader import load_document_text
-from parser.text_cleaner import clean_text
+from parser.text_cleaner import clean_text, normalize_text
 from utils.timer import elapsed_timer
 
 
@@ -31,8 +31,12 @@ class ParsePipelineResult:
     country: str | None = None  # "India" | "UK" | "US" | "EU" | None
     metadata: dict[str, str | None] = None  # type: ignore[assignment]
     expiry: ExpiryResult = None  # type: ignore[assignment]
+    # One entry per category found in the document: {category, confidence, keywords_detected, metadata}.
+    categories: list[dict] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
+        if self.categories is None:
+            object.__setattr__(self, "categories", [])
         # dataclass is frozen; use object.__setattr__ to set mutable default
         if self.metadata is None:
             object.__setattr__(self, "metadata", {})
@@ -84,9 +88,10 @@ class DocumentParserService:
                 parsed = [parse_table_rows(t) for t in raw_tables]
                 table_data = merge_tables(parsed)
 
+            table_hint_text = " ".join(f"{k} {v}" for k, v in table_data.items())
+
             # --- 5. Refined classification — table signals feed back into classifier ---
             if table_data:
-                table_hint_text = " ".join(f"{k} {v}" for k, v in table_data.items())
                 refined = self.hybrid_classifier.classify_document(cleaned_text + " " + table_hint_text)
                 if refined.document_type and refined.confidence > confidence:
                     document_type = refined.document_type
@@ -94,13 +99,22 @@ class DocumentParserService:
                     method = refined.method
                     result = refined  # carry updated keywords_detected forward
 
-            # --- 6. Regex-based metadata (baseline) ---
-            regex_metadata = extract_metadata(document_type, cleaned_text)
+            # --- 6. Regex-based metadata (baseline) — on case-preserving text, cleaned_text is lowercase ---
+            regex_text = normalize_text(extracted_text)
+            regex_metadata = extract_metadata(document_type, regex_text)
 
             # --- 7. Table metadata + safe merge (empty values never overwrite regex) ---
             table_metadata: dict[str, str] = map_fields(table_data, document_type) if table_data else {}
             metadata: dict[str, str | None] = regex_metadata.copy()
             metadata.update({k: v for k, v in table_metadata.items() if v})
+
+            # --- 7b. Every category present in the document, each with its own details ---
+            categories = self._build_categories(
+                scoring_text=cleaned_text + (" " + table_hint_text if table_data else ""),
+                regex_text=regex_text,
+                table_data=table_data,
+                primary=(document_type, confidence, result.keywords_detected, metadata),
+            )
 
             # --- 8. Expiry / start dates — use raw text so / and - in dates survive ---
             table_text = " ".join(f"{k} {v}" for k, v in table_data.items()) if table_data else ""
@@ -120,7 +134,39 @@ class DocumentParserService:
                 country=country,
                 metadata=metadata,
                 expiry=expiry,
+                categories=categories,
             )
+
+    def _build_categories(
+        self,
+        scoring_text: str,
+        regex_text: str,
+        table_data: dict[str, str],
+        primary: tuple[str | None, float, list[str], dict[str, str | None]],
+    ) -> list[dict]:
+        """List every category found in the document (the main one first) with the details extracted for it."""
+        primary_type, primary_confidence, primary_keywords, primary_metadata = primary
+        sections: list[dict] = []
+        if primary_type:
+            sections.append({
+                "category": primary_type,
+                "confidence": primary_confidence,
+                "keywords_detected": primary_keywords,
+                "metadata": primary_metadata,
+            })
+
+        for category, category_confidence, keywords in self.hybrid_classifier.matching_categories(scoring_text):
+            if category == primary_type:
+                continue
+            details: dict[str, str | None] = extract_metadata(category, regex_text)
+            details.update({k: v for k, v in map_fields(table_data, category).items() if v} if table_data else {})
+            sections.append({
+                "category": category,
+                "confidence": category_confidence,
+                "keywords_detected": keywords,
+                "metadata": details,
+            })
+        return sections
 
     def parse_batch(self, files: list[tuple[bytes, str]]) -> list[ParsePipelineResult]:
         """Parse multiple documents sequentially using the same service instance."""

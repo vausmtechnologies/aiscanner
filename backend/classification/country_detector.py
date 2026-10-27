@@ -8,7 +8,7 @@ Supported regions: India, UK, US, EU
 
 from __future__ import annotations
 
-import re
+from utils.text_match import contains_term
 
 # ---------------------------------------------------------------------------
 # Keyword tables — ordered by specificity (most specific first)
@@ -35,6 +35,8 @@ _INDIA_SIGNALS: tuple[str, ...] = (
     "transport department india",
     "goods and services tax india",
     "republic of india",
+    "government of india",
+    "inr",
 )
 
 _UK_SIGNALS: tuple[str, ...] = (
@@ -130,4 +132,4 @@ def detect_country(text: str) -> str | None:
 
 def _any_match(lower_text: str, signals: tuple[str, ...]) -> bool:
     """Return True if any signal string is found in *lower_text*."""
-    return any(signal in lower_text for signal in signals)
+    return any(contains_term(lower_text, signal) for signal in signals)

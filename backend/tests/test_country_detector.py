@@ -123,3 +123,13 @@ def test_uk_priority_over_us() -> None:
     # "dvla" (UK) and "dmv" (US) both present — UK detected first
     text = "dvla vehicle document dmv registration mentioned"
     assert detect_country(text) == "UK"
+
+
+def test_signal_inside_a_longer_word_is_not_a_match() -> None:
+    # "rto" hides inside "cartons"; it must not make the document Indian.
+    assert detect_country("copy paper cartons and printer toner") is None
+
+
+def test_india_government_of_india_and_rupee_amounts() -> None:
+    assert detect_country("Government of India registration certificate") == "India"
+    assert detect_country("Sum insured (INR) 500000") == "India"

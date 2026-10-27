@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from classification.hybrid_classifier import HybridClassifier
+from classification.keyword_classifier import KeywordClassifier
 from parser.text_cleaner import clean_text
 
 
@@ -99,3 +100,9 @@ def test_hybrid_classifier_accuracy_above_80_percent() -> None:
 
     accuracy = correct / total
     assert accuracy >= 0.8
+
+
+def test_keyword_must_match_a_whole_word() -> None:
+    classifier = KeywordClassifier(keyword_map={"Vehicles": ["rto", "registration date"]})
+    result = classifier.classify("copy paper cartons registration date")
+    assert result.keywords_detected == ["registration date"]

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from app.config import settings
 from classification.keyword_classifier import KeywordClassifier
 from classification.similarity_classifier import SimilarityClassifier
+from utils.text_match import contains_term
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class HybridClassificationResult:
 
 def keyword_score(text: str, keywords: list[str]) -> int:
     """Count how many of the given keywords appear in text."""
-    return sum(1 for kw in keywords if kw in text)
+    return sum(1 for kw in keywords if contains_term(text, kw))
 
 
 class HybridClassifier:
@@ -74,7 +75,7 @@ class HybridClassifier:
                 keywords_detected=matched,
             )
 
-        pat_hits = [phrase for phrase in PAT_EQUIPMENT_PHRASES if phrase in cleaned_text]
+        pat_hits = [phrase for phrase in PAT_EQUIPMENT_PHRASES if contains_term(cleaned_text, phrase)]
         if pat_hits:
             keywords = list(dict.fromkeys([*matched, *pat_hits]))
             return HybridClassificationResult(
@@ -92,6 +93,16 @@ class HybridClassifier:
             keywords_detected=matched,
         )
 
+    def matching_categories(self, cleaned_text: str) -> list[tuple[str, float, list[str]]]:
+        """Return (category, confidence, matched_keywords) for every category with enough keyword hits, best first."""
+        found: list[tuple[str, int, float, list[str]]] = []
+        for category, keywords in self.keyword_classifier.keyword_map.items():
+            matched = [kw for kw in keywords if contains_term(cleaned_text, kw)]
+            if len(matched) >= KEYWORD_COUNT_THRESHOLD:
+                found.append((category, len(matched), round(min(1.0, len(matched) / len(keywords)), 4), matched))
+        found.sort(key=lambda item: item[1], reverse=True)
+        return [(category, confidence, matched) for category, _, confidence, matched in found]
+
     def _classify_by_keywords(self, cleaned_text: str) -> tuple[str | None, int, list[str]]:
         """Return (best_category, best_count, matched_keywords) using raw count scoring."""
         if not cleaned_text:
@@ -108,7 +119,7 @@ class HybridClassifier:
             if count > best_count:
                 best_category = category
                 best_count = count
-                best_matched = [kw for kw in keywords if kw in cleaned_text]
+                best_matched = [kw for kw in keywords if contains_term(cleaned_text, kw)]
 
         logger.debug(
             "Keyword scores: best=%s count=%d threshold=%d",

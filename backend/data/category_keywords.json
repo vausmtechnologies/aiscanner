@@ -19,7 +19,11 @@
     "fitness certificate",
     "pollution under control",
     "puc certificate",
-    "vehicle identification number"
+    "vehicle identification number",
+    "vin",
+    "license plate",
+    "vehicle owner",
+    "vehicle make"
   ],
   "Company": [
     "certificate of incorporation",
@@ -47,7 +51,12 @@
     "system architecture",
     "system scope",
     "compliance platform",
-    "training platform"
+    "training platform",
+    "ein",
+    "limited liability company",
+    "entity type",
+    "company name",
+    "business address"
   ],
   "Equipments": [
     "purchase invoice",
@@ -81,7 +90,10 @@
     "current leakage",
     "failed equipment",
     "fuse size",
-    "remedial work"
+    "remedial work",
+    "invoice date",
+    "total due",
+    "subtotal"
   ],
   "People": [
     "employee id",

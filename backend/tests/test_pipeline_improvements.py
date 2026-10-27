@@ -170,3 +170,39 @@ class TestTableAwareExpiry:
         table_data = {"a": "val1", "b": "val2", "c": "val3"}
         result = " ".join(table_data.values())
         assert result == "val1 val2 val3"
+
+
+class TestMultiCategoryDocument:
+    """A document that holds several kinds of information is split into one section per category."""
+
+    TEXT = (
+        "Company Name Northstar Office Supplies LLC\nEntity Type Limited Liability Company (LLC)\n"
+        "EIN 12-3456789\nBusiness Address 1250 Market Street, Denver, CO 80202\n"
+        "Vehicle Owner Northstar Office Supplies LLC\nLicense Plate CO TEST42\nVIN 1HGCM82633A004352\n"
+        "Vehicle Make Ford\nRegistration Date March 20, 2024\n"
+        "Invoice Number: NS-2026-104\nInvoice Date: October 12, 2026\nSubtotal $780.00\nTotal Due $842.40\n"
+    )
+
+    def _parse(self):
+        from parser.service import DocumentParserService
+
+        return DocumentParserService().parse_document(file_bytes=self.TEXT.encode(), file_name="mixed.txt")
+
+    def test_each_category_is_listed_with_its_own_details(self) -> None:
+        by_name = {section["category"]: section for section in self._parse().categories}
+
+        assert {"Vehicles", "Company", "Equipments"} <= set(by_name)
+        assert by_name["Company"]["metadata"]["ein"] == "12-3456789"
+        assert by_name["Vehicles"]["metadata"]["chassis_number"] == "1HGCM82633A004352"
+        assert by_name["Equipments"]["metadata"]["invoice_number"] == "NS-2026-104"
+        assert by_name["Equipments"]["metadata"]["total_amount"] == "$842.40"
+
+    def test_main_category_comes_first_and_matches_document_type(self) -> None:
+        result = self._parse()
+
+        assert result.categories[0]["category"] == result.document_type
+
+    def test_values_keep_their_original_capitalisation(self) -> None:
+        by_name = {section["category"]: section for section in self._parse().categories}
+
+        assert by_name["Company"]["metadata"]["company_name"] == "Northstar Office Supplies LLC"

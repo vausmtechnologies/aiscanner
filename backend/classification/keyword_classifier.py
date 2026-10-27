@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 
 from app.config import settings
+from utils.text_match import contains_term
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class KeywordClassifier:
 			if not keywords:
 				continue
 
-			matched = [keyword for keyword in keywords if keyword in cleaned_text]
+			matched = [keyword for keyword in keywords if contains_term(cleaned_text, keyword)]
 			confidence = len(matched) / len(keywords)
 
 			if confidence > best_confidence:
@@ -89,7 +90,7 @@ class KeywordClassifier:
 			if not keywords:
 				continue
 
-			matched = [keyword for keyword in keywords if keyword in cleaned_text]
+			matched = [keyword for keyword in keywords if contains_term(cleaned_text, keyword)]
 			confidence = len(matched) / len(keywords)
 			scored_categories.append(
 				{

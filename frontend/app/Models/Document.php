@@ -52,6 +52,7 @@ class Document extends Model
             $expiry['expiry_date'] ?? null,
             implode(' ', array_keys($metadata)),
             implode(' ', array_filter($metadata)),
+            collect($result['categories'] ?? [])->map(fn ($section) => $section['category'].' '.implode(' ', array_filter($section['metadata'] ?? [])))->implode(' '),
             implode(' ', $keywords),
         ])));
 

@@ -119,6 +119,8 @@
   @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } .cols { grid-template-columns: 1fr; } .type { font-size: 26px; } }
 
   /* document search */
+  .sections { display: grid; gap: 16px; align-content: start; }
+  .sections h2 .badge { margin-left: 8px; vertical-align: middle; }
   .topbar.wide .in { max-width: 1840px; padding-left: 32px; padding-right: 32px; }
   .center.stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: stretch; grid-template-rows: minmax(0, 1fr); min-height: calc(100vh - 62px); width: 100%; max-width: 1840px; margin: 0 auto; padding: 24px 32px; }
   .stack .up { display: flex; flex-direction: column; justify-content: center; }
@@ -228,11 +230,20 @@
           </div>
           <div class="grid">
             <div>
-              @forelse ($r['metadata'] ?? [] as $key => $value)
-                <div class="row"><span class="k">{{ \Illuminate\Support\Str::headline($key) }}</span>
-                  <span class="v {{ ($value === null || $value === '') ? 'na' : '' }}">{{ ($value === null || $value === '') ? 'Not found' : $value }}</span></div>
+              @php $zs = $r['categories'] ?? []; @endphp
+              @forelse ($zs as $section)
+                @if (count($zs) > 1)<div class="sum" style="margin:10px 0 2px"><b>{{ $section['category'] }}</b> · {{ round(($section['confidence'] ?? 0) * 100) }}% match</div>@endif
+                @foreach ($section['metadata'] ?? [] as $key => $value)
+                  <div class="row"><span class="k">{{ \Illuminate\Support\Str::headline($key) }}</span>
+                    <span class="v {{ ($value === null || $value === '') ? 'na' : '' }}">{{ ($value === null || $value === '') ? 'Not found' : $value }}</span></div>
+                @endforeach
               @empty
-                <div class="sum">No details extracted.</div>
+                @forelse ($r['metadata'] ?? [] as $key => $value)
+                  <div class="row"><span class="k">{{ \Illuminate\Support\Str::headline($key) }}</span>
+                    <span class="v {{ ($value === null || $value === '') ? 'na' : '' }}">{{ ($value === null || $value === '') ? 'Not found' : $value }}</span></div>
+                @empty
+                  <div class="sum">No details extracted.</div>
+                @endforelse
               @endforelse
             </div>
             <div>
@@ -257,6 +268,11 @@
     $ringColor = ['ok' => '#15803d', 'warn' => '#d97706', 'bad' => '#dc2626'][$band[0]];
     $circ = 2 * M_PI * 44;
     $meta = $r['metadata'] ?? [];
+    $sections = $r['categories'] ?? [];
+    if (! $sections && ($r['document_type'] ?? null)) {
+        $sections = [['category' => $r['document_type'], 'confidence' => $conf, 'metadata' => $meta, 'keywords_detected' => []]];
+    }
+    $foundCategories = collect($sections)->pluck('category')->all();
     $statusMap = ['valid' => ['ok', 'Valid'], 'expiring_soon' => ['warn', 'Expiring soon'], 'expired' => ['bad', 'Expired'], 'unknown' => ['', 'Expiry unknown']];
     [$sCls, $sLabel] = $statusMap[$status] ?? ['', ucfirst($status)];
     $days = $e['days_remaining'] ?? null;
@@ -286,7 +302,7 @@
     </div>
 
     <div class="cats sm">
-      @foreach ($categories as $name => $desc)<div class="cat {{ ($r['document_type'] ?? null) === $name ? 'on' : '' }}"><b>{{ $name }}</b>{{ $desc }}</div>@endforeach
+      @foreach ($categories as $name => $desc)<div class="cat {{ in_array($name, $foundCategories, true) ? 'on' : '' }}"><b>{{ $name }}</b>{{ $desc }}</div>@endforeach
     </div>
 
     @if ($conf < 0.25)
@@ -301,21 +317,34 @@
     </div>
 
     <div class="cols">
-      <div class="card">
-        <h2>Extracted details</h2>
-        @forelse ($meta as $key => $value)
-          <div class="row">
-            <span class="k">{{ \Illuminate\Support\Str::headline($key) }}</span>
-            @if ($value !== null && $value !== '')
-              <span class="v">{{ $value }}
-                <button type="button" class="cp" title="Copy" data-copy="{{ $value }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
-              </span>
-            @else
-              <span class="v na">Not found</span>
+      <div class="sections">
+        @forelse ($sections as $section)
+          @php $sc = (float) ($section['confidence'] ?? 0); @endphp
+          <div class="card">
+            <h2>{{ $section['category'] }} <span class="badge {{ $sc >= 0.5 ? 'ok' : ($sc >= 0.25 ? 'warn' : 'bad') }}">{{ round($sc * 100) }}% match</span></h2>
+            @forelse ($section['metadata'] ?? [] as $key => $value)
+              <div class="row">
+                <span class="k">{{ \Illuminate\Support\Str::headline($key) }}</span>
+                @if ($value !== null && $value !== '')
+                  <span class="v">{{ $value }}
+                    <button type="button" class="cp" title="Copy" data-copy="{{ $value }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+                  </span>
+                @else
+                  <span class="v na">Not found</span>
+                @endif
+              </div>
+            @empty
+              <div class="v na" style="color:var(--muted)">No details could be extracted for this category.</div>
+            @endforelse
+            @if (! empty($section['keywords_detected']))
+              <div class="chips" style="margin-top:12px">@foreach ($section['keywords_detected'] as $kw)<span class="chip">{{ $kw }}</span>@endforeach</div>
             @endif
           </div>
         @empty
-          <div class="v na" style="color:var(--muted)">No details could be extracted from this document.</div>
+          <div class="card">
+            <h2>Extracted details</h2>
+            <div class="v na" style="color:var(--muted)">No details could be extracted from this document.</div>
+          </div>
         @endforelse
       </div>
 
@@ -330,9 +359,9 @@
     </div>
 
     <div class="card">
-      <h2>Keywords detected ({{ count($r['keywords_detected'] ?? []) }})</h2>
+      <h2>Keywords detected ({{ collect($sections)->pluck('keywords_detected')->flatten()->unique()->count() ?: count($r['keywords_detected'] ?? []) }})</h2>
       <div class="chips">
-        @forelse ($r['keywords_detected'] ?? [] as $kw)<span class="chip">{{ $kw }}</span>@empty<span style="color:var(--muted)">None</span>@endforelse
+        @forelse (collect($sections)->pluck('keywords_detected')->flatten()->unique()->all() ?: ($r['keywords_detected'] ?? []) as $kw)<span class="chip">{{ $kw }}</span>@empty<span style="color:var(--muted)">None</span>@endforelse
       </div>
     </div>
 
@@ -425,7 +454,7 @@
       if (f) {
         document.getElementById('pname').textContent = f.name;
         document.getElementById('pext').textContent = (f.name.split('.').pop() || '').toUpperCase();
-        document.getElementById('psize').textContent = size(f.size) + (tooBig(f) ? ' · too large' : '');
+        document.getElementById('psize').textContent = size(f.size) + (tooBig(f) ? ' · too large, max ' + (isZip(f) ? '50' : '20') + ' MB' : '');
       }
       go.disabled = !f || tooBig(f);
     };
