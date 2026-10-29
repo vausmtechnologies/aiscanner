@@ -14,8 +14,6 @@ class ScanService
 {
     private const ALLOWED_EXT = ['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'docx', 'doc', 'pptx', 'ppt', 'txt'];
 
-    private const MAX_ZIP_FILES = 30;
-
     private const MAX_ZIP_BYTES = 52428800; // 50 MB for a whole zip
 
     private const MAX_ENTRY_BYTES = 10485760; // 10 MB per document inside a zip
@@ -171,7 +169,7 @@ class ScanService
                     continue;
                 }
 
-                if (count($items) >= self::MAX_ZIP_FILES) {
+                if (count($items) >= (int) config('services.scan.max_zip_files')) {
                     $skipped++;
 
                     continue;

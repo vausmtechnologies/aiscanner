@@ -35,6 +35,10 @@ return [
         ],
     ],
 
+    'app' => [
+        'password' => env('APP_PASSWORD'),
+    ],
+
     'api' => [
         'key' => env('API_KEY'),
     ],
@@ -42,6 +46,10 @@ return [
     'parser' => [
         'url' => env('PARSER_URL'),
         'key' => env('PARSER_API_KEY'),
+    ],
+
+    'scan' => [
+        'max_zip_files' => (int) env('SCAN_MAX_ZIP_FILES', 100),
     ],
 
 ];
