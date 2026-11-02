@@ -148,6 +148,8 @@
   .hit .tag { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--soft); color: var(--muted); }
   .hit .tag.type { background: var(--accent); color: #fff; }
   .hit .tag.ok { background: var(--ok-bg); color: var(--ok); } .hit .tag.warn { background: var(--warn-bg); color: var(--warn); } .hit .tag.bad { background: var(--bad-bg); color: var(--bad); }
+  .hit .del { font: inherit; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--bad); cursor: pointer; transition: .15s; }
+  .hit .del:hover { background: var(--bad-bg); border-color: var(--bad); }
   .hit .when { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 400; background: none; padding: 0; }
   .hit dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin: 0; padding-top: 10px; border-top: 1px solid var(--line); }
   .hit dl div { min-width: 0; }
@@ -182,8 +184,9 @@
   <a class="brand" href="{{ route('scan.index') }}"><i>
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
   </i>AI Document Scanner</a>
+  <div class="actions"><a class="btn sm ghost" href="{{ route('train.index') }}">Train categories</a>
   @if (config('services.app.password') !== null && config('services.app.password') !== '')<form method="POST" action="{{ route('logout') }}">@csrf<button type="submit" class="btn sm ghost">Logout</button></form>@endif
-  @if (session('result') || session('batch'))<div class="actions"><button type="button" class="btn sm ghost" onclick="window.print()">Print</button><a class="btn sm" href="{{ route('scan.index') }}">Scan another</a></div>@endif
+  @if (session('result') || session('batch'))<div class="actions"><button type="button" class="btn sm ghost" onclick="window.print()">Print</button><a class="btn sm" href="{{ route('scan.index') }}">Scan another</a></div>@endif</div>
 </div></div>
 
 @if (session('batch'))
@@ -505,11 +508,19 @@
           + (x.document_type ? '<span class="tag type">' + mark(x.document_type) + '</span>' : '')
           + (x.country ? '<span class="tag">' + mark(x.country) + '</span>' : '')
           + (known ? '<span class="tag ' + (statusCls[x.expiry_status] || '') + '">' + esc(x.expiry_status.replace('_', ' ')) + (x.expiry_date ? ' · ' + esc(x.expiry_date) : '') + '</span>' : '')
-          + '<span class="tag when">' + esc(x.scanned_at) + '</span></div>'
+          + '<span class="tag when">' + esc(x.scanned_at) + '</span>'
+          + '<button type="button" class="del" data-del="' + esc(x.id) + '" data-name="' + esc(x.filename) + '">Delete</button></div>'
           + (details ? '<dl>' + details + '</dl>' : '') + '</div>';
       }).join('');
     };
     document.querySelector('.find').addEventListener('click', e => {
+      const del = e.target.closest('.del');
+      if (del) {
+        if (!confirm('Delete “' + del.dataset.name + '” from the scanned documents?')) return;
+        fetch(@json(url('/documents')) + '/' + encodeURIComponent(del.dataset.del), { method: 'DELETE', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': @json(csrf_token()) } })
+          .then(r => { if (!r.ok) throw new Error(); run(); }).catch(() => alert('Could not delete the document. Please try again.'));
+        return;
+      }
       const c = e.target.closest('.chip'); if (!c) return;
       if ('type' in c.dataset) fType = c.dataset.type; else fStatus = c.dataset.status;
       run();

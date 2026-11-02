@@ -49,10 +49,25 @@ class SimilarityClassifier:
 		if not self.category_embeddings:
 			raise RuntimeError("No valid training samples available for similarity classification")
 
+		# Built-in embeddings stay fixed; trained samples are layered on top by set_extra_samples().
+		self._base_embeddings = dict(self.category_embeddings)
+
 		logger.info(
 			"SimilarityClassifier ready: %d categories, global dataset",
 			len(self.category_embeddings),
 		)
+
+	def set_extra_samples(self, extra: dict[str, list[str]]) -> None:
+		"""Replace the trained samples layered over the built-in ones (extends or adds categories)."""
+		merged = dict(self._base_embeddings)
+		for category, samples in extra.items():
+			clean_samples = [str(s).strip().lower() for s in samples if str(s).strip()]
+			if not clean_samples:
+				continue
+			vecs = np.array(embed_texts(clean_samples))
+			base = merged.get(category)
+			merged[category] = np.vstack([base, vecs]) if base is not None else vecs
+		self.category_embeddings = merged
 
 	def classify(self, cleaned_text: str) -> SimilarityClassificationResult:
 		"""Classify text by max cosine similarity against each category pool."""

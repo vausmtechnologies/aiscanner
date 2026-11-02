@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.config import settings
 from classification.country_detector import detect_country
+from classification.dynamic_categories import DynamicCategoryStore
 from classification.hybrid_classifier import HybridClassifier
+from classification.trained_categories import mine_keywords, normalise_name, sample_chunks
 from expiry.expiry_detector import ExpiryResult, detect_expiry
 from layout.table_detector import detect_tables
 from layout.table_mapper import map_fields
@@ -27,7 +29,7 @@ class ParsePipelineResult:
     keywords_detected: list[str]
     text_length: int
     processing_time_ms: int
-    method: str = "none"  # "keyword" | "embedding" | "filename" | "none"
+    method: str = "none"  # "keyword" | "embedding" | "filename" | "auto" | "none"
     country: str | None = None  # "India" | "UK" | "US" | "EU" | None
     metadata: dict[str, str | None] = None  # type: ignore[assignment]
     expiry: ExpiryResult = None  # type: ignore[assignment]
@@ -49,6 +51,7 @@ class DocumentParserService:
 
     def __init__(self) -> None:
         self.hybrid_classifier = HybridClassifier()  # precomputes embeddings at startup
+        self.dynamic_categories = DynamicCategoryStore()
 
     def parse_document(self, file_bytes: bytes, file_name: str) -> ParsePipelineResult:
         """Parse a single uploaded document and return classification metadata.
@@ -98,6 +101,15 @@ class DocumentParserService:
                     confidence = refined.confidence
                     method = refined.method
                     result = refined  # carry updated keywords_detected forward
+
+            # --- 5b. Nothing matched — group into (or create) an automatic category ---
+            if not document_type:
+                auto = self.dynamic_categories.assign(cleaned_text, extracted_text, file_name)
+                if auto:
+                    document_type = auto.category
+                    confidence = auto.confidence
+                    method = "auto"
+                    result = replace(result, keywords_detected=auto.keywords_detected)
 
             # --- 6. Regex-based metadata (baseline) — on case-preserving text, cleaned_text is lowercase ---
             regex_text = normalize_text(extracted_text)
@@ -167,6 +179,104 @@ class DocumentParserService:
                 "metadata": details,
             })
         return sections
+
+    # ------------------------------------------------------------------
+    # Training (driven by the training UI)
+    # ------------------------------------------------------------------
+
+    def train_category(self, category: str, files: list[tuple[bytes, str]]) -> dict:
+        """Teach a category (new or existing) from sample documents; takes effect immediately.
+
+        Raises ValueError for an invalid name. Per-file problems are reported in ``files``.
+        """
+        name = self._canonical_name(normalise_name(category))
+        store = self.hybrid_classifier.trained_store
+
+        report: list[dict] = []
+        texts: list[str] = []
+        for file_bytes, file_name in files:
+            try:
+                extracted, _ = load_document_text(file_bytes=file_bytes, file_name=file_name)
+            except Exception as exc:  # unreadable files are reported, not fatal for the batch
+                report.append({"filename": file_name, "ok": False, "error": str(exc)})
+                continue
+            cleaned = clean_text(extracted)
+            if len(cleaned) < 30:
+                report.append({"filename": file_name, "ok": False, "error": "No readable text found."})
+                continue
+            texts.append(cleaned)
+            report.append({"filename": file_name, "ok": True, "text_length": len(cleaned)})
+
+        if texts:
+            keywords = mine_keywords(texts, self._other_category_texts(name))
+            samples = [chunk for text in texts for chunk in sample_chunks(text)]
+            store.add(name, keywords, samples, documents=len(texts), sources=[r["filename"] for r in report if r["ok"]])
+            self.hybrid_classifier.reload_trained()
+
+        return {"category": name, "trained_documents": len(texts), "files": report, "details": self._category_details(name)}
+
+    def list_categories(self) -> list[dict]:
+        """Every category the scanner knows: built-in, trained (new or extended) and auto-created."""
+        trained = self.hybrid_classifier.trained_store.all()
+        static = self.hybrid_classifier._static_keywords
+        rows = [self._category_details(name) for name in static]
+        rows += [self._category_details(name) for name in trained if name not in static]
+        rows += [
+            {"name": name, "kind": "auto", "documents": e["count"], "keywords": e["keywords"], "trained_documents": 0}
+            for name, e in self.dynamic_categories.entries().items()
+        ]
+        return rows
+
+    def delete_category(self, name: str) -> bool:
+        """Forget trained data (a built-in category keeps its defaults) or an auto category."""
+        removed = self.hybrid_classifier.trained_store.remove(name)
+        removed = self.dynamic_categories.remove(name) is not None or removed
+        if removed:
+            self.hybrid_classifier.reload_trained()
+        return removed
+
+    def promote_auto_category(self, auto_name: str, new_name: str | None = None) -> dict:
+        """Turn an auto-created category into a trained one (optionally renaming it)."""
+        entry = self.dynamic_categories.remove(auto_name)
+        if entry is None:
+            raise KeyError(auto_name)
+        name = self._canonical_name(normalise_name(new_name or auto_name))
+        self.hybrid_classifier.trained_store.add(name, entry["keywords"], [" ".join(entry["keywords"])], documents=entry["count"])
+        self.hybrid_classifier.reload_trained()
+        return self._category_details(name)
+
+    def _canonical_name(self, name: str) -> str:
+        """Reuse the stored spelling when the name matches an existing category ignoring case."""
+        known = [*self.hybrid_classifier._static_keywords, *self.hybrid_classifier.trained_store.names()]
+        return next((existing for existing in known if existing.lower() == name.lower()), name)
+
+    def _other_category_texts(self, name: str) -> list[str]:
+        """One cleaned text per other category (keywords + samples), to find what makes this one distinctive."""
+        classifier = self.hybrid_classifier
+        trained = classifier.trained_store.all()
+        texts: list[str] = []
+        for category in {*classifier.keyword_classifier.keyword_map, *classifier.similarity_classifier.training_samples}:
+            if category == name:
+                continue
+            parts = list(classifier.keyword_classifier.keyword_map.get(category, []))
+            parts += classifier.similarity_classifier.training_samples.get(category, [])
+            parts += trained.get(category, {}).get("samples", [])
+            texts.append(clean_text(" ".join(parts)))
+        return texts
+
+    def _category_details(self, name: str) -> dict:
+        classifier = self.hybrid_classifier
+        entry = classifier.trained_store.all().get(name)
+        builtin = name in classifier._static_keywords
+        return {
+            "name": name,
+            "kind": "built-in" if builtin else "trained",
+            "documents": entry["documents"] if entry else 0,
+            "trained_documents": entry["documents"] if entry else 0,
+            "keywords": classifier.keyword_classifier.keyword_map.get(name, []),
+            "trained_keywords": entry["keywords"] if entry else [],
+            "updated_at": entry.get("updated_at") if entry else None,
+        }
 
     def parse_batch(self, files: list[tuple[bytes, str]]) -> list[ParsePipelineResult]:
         """Parse multiple documents sequentially using the same service instance."""

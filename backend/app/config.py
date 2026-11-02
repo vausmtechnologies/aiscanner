@@ -31,6 +31,8 @@ class Settings:
 	keyword_min_confidence: float = 0.5
 	similarity_min_confidence: float = 0.55
 	filename_hint_min_confidence: float = 0.55
+	# Documents matching no configured category are grouped into auto-created ones above this similarity.
+	dynamic_category_similarity: float = 0.5
 	equipment_filename_hints: tuple[str, ...] = (
 		"light",
 		"lights",
@@ -59,6 +61,16 @@ class Settings:
 	def category_keywords_path(self) -> Path:
 		"""Path to category keyword definitions."""
 		return self.data_dir / "category_keywords.json"
+
+	@property
+	def dynamic_categories_path(self) -> Path:
+		"""Path to the registry of auto-created categories."""
+		return self.data_dir / "dynamic_categories.json"
+
+	@property
+	def trained_categories_path(self) -> Path:
+		"""Path to categories taught through the training UI."""
+		return self.data_dir / "trained_categories.json"
 
 	@property
 	def training_samples_path(self) -> Path:

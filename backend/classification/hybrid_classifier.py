@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from app.config import settings
 from classification.keyword_classifier import KeywordClassifier
 from classification.similarity_classifier import SimilarityClassifier
+from classification.trained_categories import TrainedCategoryStore
 from utils.text_match import contains_term
 
 logger = logging.getLogger(__name__)
@@ -59,10 +60,33 @@ class HybridClassifier:
     def __init__(self) -> None:
         self.keyword_classifier = KeywordClassifier()
         self.similarity_classifier = SimilarityClassifier()  # precomputes embeddings here
+        self.trained_store = TrainedCategoryStore()
+        self._static_keywords = {category: list(words) for category, words in self.keyword_classifier.keyword_map.items()}
+        self._trained_version: float | None = None
+        self.reload_trained()
         logger.info("HybridClassifier ready (category embeddings precomputed)")
+
+    def reload_trained(self) -> None:
+        """Merge trained categories (UI-taught keywords and samples) into the keyword map and embeddings."""
+        version = self.trained_store.version()
+        trained = self.trained_store.all()
+        keyword_map = {category: list(words) for category, words in self._static_keywords.items()}
+        for category, entry in trained.items():
+            merged = [*keyword_map.get(category, []), *entry.get("keywords", [])]
+            keyword_map[category] = list(dict.fromkeys(str(word).strip().lower() for word in merged if str(word).strip()))
+        self.keyword_classifier.keyword_map = keyword_map
+        self.similarity_classifier.set_extra_samples({c: e.get("samples", []) for c, e in trained.items()})
+        self._trained_version = version
+        logger.info("Trained categories loaded: %d", len(trained))
+
+    def _sync_trained(self) -> None:
+        """Pick up training done by another process (API server vs RQ worker) without a restart."""
+        if self.trained_store.version() != self._trained_version:
+            self.reload_trained()
 
     def classify_document(self, cleaned_text: str) -> HybridClassificationResult:
         """Run hybrid pipeline and return structured classification result."""
+        self._sync_trained()
         category, count, matched = self._classify_by_keywords(cleaned_text)
 
         if count >= KEYWORD_COUNT_THRESHOLD:
@@ -95,6 +119,7 @@ class HybridClassifier:
 
     def matching_categories(self, cleaned_text: str) -> list[tuple[str, float, list[str]]]:
         """Return (category, confidence, matched_keywords) for every category with enough keyword hits, best first."""
+        self._sync_trained()
         found: list[tuple[str, int, float, list[str]]] = []
         for category, keywords in self.keyword_classifier.keyword_map.items():
             matched = [kw for kw in keywords if contains_term(cleaned_text, kw)]

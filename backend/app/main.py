@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -240,6 +240,48 @@ async def debug_keywords(file: UploadFile = File(...)) -> DebugKeywordsResponse 
 	except Exception as exc:  # pragma: no cover - top-level API safety net
 		logger.exception("Unexpected debug keyword failure")
 		return _error_response("internal_error", str(exc), 500)
+
+
+@app.get("/categories")
+def list_categories() -> dict:
+	"""All known categories (built-in, trained, auto-created) with their keywords."""
+	return {"categories": parser_service.list_categories()}
+
+
+@app.post("/train")
+async def train(category: str = Form(...), files: list[UploadFile] = File(...)) -> JSONResponse:
+	"""Teach a category (new or existing) from sample documents; classification updates immediately."""
+	try:
+		uploads = [(await upload.read(), upload.filename or "") for upload in files]
+		return JSONResponse(content={"success": True, **parser_service.train_category(category, uploads)})
+	except ValueError as exc:
+		return _error_response("invalid_category", str(exc), 400)
+	except Exception as exc:  # pragma: no cover - top-level API safety net
+		logger.exception("Training failed")
+		return _error_response("internal_error", str(exc), 500)
+
+
+@app.delete("/categories/{name}")
+def delete_category(name: str) -> JSONResponse:
+	"""Remove a trained or auto category (built-in categories only lose their extra training)."""
+	if not parser_service.delete_category(name):
+		return _error_response("category_not_found", "No trained or auto category with that name.", 404)
+	return JSONResponse(content={"success": True})
+
+
+class PromoteRequest(BaseModel):
+	name: str | None = None
+
+
+@app.post("/categories/{name}/promote")
+def promote_category(name: str, body: PromoteRequest) -> JSONResponse:
+	"""Confirm an auto-created category (optionally renaming it) so it becomes a regular trained one."""
+	try:
+		return JSONResponse(content={"success": True, "category": parser_service.promote_auto_category(name, body.name)})
+	except KeyError:
+		return _error_response("category_not_found", "No auto category with that name.", 404)
+	except ValueError as exc:
+		return _error_response("invalid_category", str(exc), 400)
 
 
 def _error_response(error_code: str, message: str, status_code: int) -> JSONResponse:

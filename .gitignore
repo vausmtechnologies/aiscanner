@@ -19,3 +19,7 @@ backend/work_log_*.txt
 frontend/AGENTS.md
 frontend/CLAUDE.md
 .claude/
+
+# Runtime lock/temp files for learned categories
+backend/data/*.lock
+backend/data/*.tmp

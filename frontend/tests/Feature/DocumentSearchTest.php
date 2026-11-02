@@ -67,4 +67,15 @@ class DocumentSearchTest extends TestCase
         $this->getJson(route('scan.search', ['type' => 'unknown']))->assertJsonPath('count', 1);
         $this->getJson(route('scan.search'))->assertJsonPath('types.Vehicles', 2);
     }
+
+    public function test_deletes_a_scanned_document(): void
+    {
+        $document = Document::factory()->create();
+        $other = Document::factory()->create();
+
+        $this->deleteJson(route('scan.destroy', $document))->assertOk()->assertJsonPath('deleted', true);
+
+        $this->assertModelMissing($document);
+        $this->assertModelExists($other);
+    }
 }

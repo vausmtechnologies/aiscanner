@@ -77,6 +77,14 @@ class ScanController extends Controller
         ]);
     }
 
+    /** Removes a scanned document from the searchable list. */
+    public function destroy(Document $document): JsonResponse
+    {
+        $document->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
     /** Waiting page: polls status until all queued jobs are done. */
     public function wait(string $batch): View|RedirectResponse
     {

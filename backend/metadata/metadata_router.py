@@ -6,6 +6,7 @@ import logging
 
 from metadata.company_extractor import extract_company_metadata
 from metadata.equipment_extractor import extract_equipment_metadata
+from metadata.generic_extractor import extract_generic_metadata
 from metadata.people_extractor import extract_people_metadata
 from metadata.vehicle_extractor import extract_vehicle_metadata
 
@@ -23,7 +24,8 @@ _EXTRACTORS = {
 def extract_metadata(category: str | None, text: str) -> dict[str, str | None]:
     """Dispatch text to the correct extractor based on document category.
 
-    If the category is unknown or None, returns an empty dict.
+    Categories without a dedicated extractor (trained / auto-created ones) fall back to
+    generic "Label: value" extraction. A missing category returns an empty dict.
     All extractor functions return None for fields that are not found.
     """
     if not category:
@@ -32,7 +34,7 @@ def extract_metadata(category: str | None, text: str) -> dict[str, str | None]:
 
     extractor = _EXTRACTORS.get(category)
     if extractor is None:
-        logger.warning("No metadata extractor registered for category=%r", category)
-        return {}
+        logger.debug("No dedicated extractor for category=%r — using generic extraction", category)
+        return extract_generic_metadata(text)
 
     return extractor(text)

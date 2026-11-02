@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\ScanController;
+use App\Http\Controllers\TrainController;
 use App\Http\Middleware\RequireAppPassword;
 use Illuminate\Support\Facades\Route;
 
@@ -13,7 +14,12 @@ Route::middleware(RequireAppPassword::class)->group(function () {
     Route::get('/', [ScanController::class, 'index'])->name('scan.index');
     Route::post('/scan', [ScanController::class, 'scan'])->name('scan.run');
     Route::get('/search', [ScanController::class, 'search'])->name('scan.search');
+    Route::delete('/documents/{document}', [ScanController::class, 'destroy'])->name('scan.destroy');
     Route::get('/scan/{batch}', [ScanController::class, 'wait'])->name('scan.wait');
     Route::get('/scan/{batch}/status', [ScanController::class, 'status'])->name('scan.status');
+    Route::get('/train', [TrainController::class, 'index'])->name('train.index');
+    Route::post('/train', [TrainController::class, 'store'])->name('train.store');
+    Route::delete('/train/categories/{name}', [TrainController::class, 'destroy'])->name('train.destroy');
+    Route::post('/train/categories/{name}/promote', [TrainController::class, 'promote'])->name('train.promote');
     Route::get('/scan/{batch}/result', [ScanController::class, 'result'])->name('scan.result');
 });
