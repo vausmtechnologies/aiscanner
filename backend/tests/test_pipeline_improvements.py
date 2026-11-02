@@ -155,16 +155,18 @@ class TestTableAwareExpiry:
 
     def test_table_date_surfaced_by_expiry_detector(self) -> None:
         """A date only present in the table (not OCR text) must be found."""
+        from datetime import date, timedelta
+
         from expiry.expiry_detector import detect_expiry
 
+        future = date.today() + timedelta(days=365)
         cleaned_text = "Motor insurance policy"
-        table_data = {"risk expiry date": "05 Jun 2026"}
+        table_data = {"risk expiry date": future.strftime("%d %b %Y")}
         table_values_text = " ".join(table_data.values())
         expiry_text = cleaned_text + "\n" + table_values_text
 
         result = detect_expiry(expiry_text, "Vehicles")
-        # The date is in the future relative to test execution (2026-06-05)
-        assert result.expiry_date == "2026-06-05"
+        assert result.expiry_date == future.isoformat()
 
     def test_table_values_join_is_space_separated(self) -> None:
         table_data = {"a": "val1", "b": "val2", "c": "val3"}
